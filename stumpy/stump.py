@@ -9,13 +9,13 @@ import numba
 from . import core, config
 from .aamp import aamp
 
-
-@njit(
-    # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:],"
-    # "b1[:], b1[:], b1[:], b1[:], i8[:], i8, i8, i8, f8[:, :, :], f8[:, :],"
-    # "f8[:, :], i8[:, :, :], i8[:, :], i8[:, :], b1)",
-    fastmath=True,
-)
+# TODO einkommentieren wenn debugging fertig
+# @njit(
+#     # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:],"
+#     # "b1[:], b1[:], b1[:], b1[:], i8[:], i8, i8, i8, f8[:, :, :], f8[:, :],"
+#     # "f8[:, :], i8[:, :, :], i8[:, :], i8[:, :], b1)",
+#     fastmath=True,
+# )
 def _compute_diagonal(
     T_A,
     T_B,
@@ -161,25 +161,27 @@ def _compute_diagonal(
     centered sum-of-products along each diagonal of the distance matrix in place of the
     sliding window dot product found in the original STOMP method.
     """
-    n_A = T_A.shape[0]
-    n_B = T_B.shape[0]
-    m_inverse = 1.0 / m
+    n_A = T_A.shape[0] # length TS A
+    n_B = T_B.shape[0] # length TS B
+    m_inverse = 1.0 / m # inverse window length
     constant = (m - 1) * m_inverse * m_inverse  # (m - 1)/(m * m)
-    uint64_m = np.uint64(m)
+    uint64_m = np.uint64(m) # window length m as np uint64
 
+    # for each diagonal
     for diag_idx in range(diags_start_idx, diags_stop_idx):
         g = diags[diag_idx]
 
-        if g >= 0:
+        if g >= 0: # wenn ignore_trivial == True, dann wird g auch größer 0 sein. 
             iter_range = range(0, min(n_A - m + 1, n_B - m + 1 - g))
-        else:
+        else: # wenn ignore_trivial == False, iter_range wird 
             iter_range = range(-g, min(n_A - m + 1, n_B - m + 1 - g))
 
+        # for each position in the diagonal
         for i in iter_range:
-            uint64_i = np.uint64(i)
-            uint64_j = np.uint64(i + g)
+            uint64_i = np.uint64(i) # horizontal index
+            uint64_j = np.uint64(i + g) # vertical index
 
-            if uint64_i == 0 or uint64_j == 0:
+            if uint64_i == 0 or uint64_j == 0: # wenn QT_start, berechne dot product, ansonsten nutze QT_i-1,j-1
                 cov = (
                     np.dot(
                         (T_B[uint64_j : uint64_j + uint64_m] - M_T[uint64_j]),
@@ -204,7 +206,7 @@ def _compute_diagonal(
                 if T_B_subseq_isconstant[uint64_j] or T_A_subseq_isconstant[uint64_i]:
                     pearson = 0.5
                 else:
-                    pearson = cov * Σ_T_inverse[uint64_j] * σ_Q_inverse[uint64_i]
+                    pearson = cov * Σ_T_inverse[uint64_j] * σ_Q_inverse[uint64_i] # Berechnung distance
 
                 if T_B_subseq_isconstant[uint64_j] and T_A_subseq_isconstant[uint64_i]:
                     pearson = 1.0
@@ -213,7 +215,7 @@ def _compute_diagonal(
                 # when the newly-calculated `pearson` value becomes greater than the
                 # first (i.e. smallest) element in this array. Note that a higher
                 # pearson value corresponds to a lower distance.
-                if pearson > ρ[thread_idx, uint64_i, 0]:
+                if pearson > ρ[thread_idx, uint64_i, 0]: # update if distance is lower at i
                     idx = np.searchsorted(ρ[thread_idx, uint64_i], pearson)
                     core._shift_insert_at_index(
                         ρ[thread_idx, uint64_i], idx, pearson, shift="left"
@@ -223,7 +225,7 @@ def _compute_diagonal(
                     )
 
                 if ignore_trivial:  # self-joins only
-                    if pearson > ρ[thread_idx, uint64_j, 0]:
+                    if pearson > ρ[thread_idx, uint64_j, 0]: # update if lower at j too (because of the diagonal symmetry if A = B (self joins): QT_0,2 = QT_2,0)
                         idx = np.searchsorted(ρ[thread_idx, uint64_j], pearson)
                         core._shift_insert_at_index(
                             ρ[thread_idx, uint64_j], idx, pearson, shift="left"
@@ -233,11 +235,12 @@ def _compute_diagonal(
                         )
 
                     if uint64_i < uint64_j:
+                        # Position j zeigt nach links auf i (wenn pearson > aktuelle Distanz)
                         # left pearson correlation and left matrix profile index
                         if pearson > ρL[thread_idx, uint64_j]:
                             ρL[thread_idx, uint64_j] = pearson
                             IL[thread_idx, uint64_j] = uint64_i
-
+                        # Position i zeigt nach rechts auf j (wenn pearson > aktuelle Distanz)
                         # right pearson correlation and right matrix profile index
                         if pearson > ρR[thread_idx, uint64_i]:
                             ρR[thread_idx, uint64_i] = pearson
@@ -246,12 +249,13 @@ def _compute_diagonal(
     return
 
 
-@njit(
-    # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], b1[:], b1[:],"
-    # "b1[:], b1[:], i8[:], b1, i8)",
-    parallel=True,
-    fastmath=True,
-)
+# TODO wieder einkommentieren nach debugging
+# @njit(
+#     # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], b1[:], b1[:],"
+#     # "b1[:], b1[:], i8[:], b1, i8)",
+#     parallel=True,
+#     fastmath=True,
+# )
 def _stump(
     T_A,
     T_B,
@@ -399,24 +403,25 @@ def _stump(
 
     Note that left and right matrix profiles are only available for self-joins.
     """
-    n_A = T_A.shape[0]
-    n_B = T_B.shape[0]
-    l = n_A - m + 1
-    n_threads = numba.config.NUMBA_NUM_THREADS
+    n_A = T_A.shape[0] # length A
+    n_B = T_B.shape[0] # length B
+    l = n_A - m + 1 # l: startindex for last subsequence in T / number of subsequences in A
+    n_threads = numba.config.NUMBA_NUM_THREADS # default: num threads = num of CPU cores available (for gruenau8 36*2=72)
 
-    ρ = np.full((n_threads, l, k), np.NINF, dtype=np.float64)
-    I = np.full((n_threads, l, k), -1, dtype=np.int64)
+    ρ = np.full((n_threads, l, k), np.NINF, dtype=np.float64) # init Pearson correlation matrix
+    I = np.full((n_threads, l, k), -1, dtype=np.int64) # init MPIndex matrix
 
-    ρL = np.full((n_threads, l), np.NINF, dtype=np.float64)
-    IL = np.full((n_threads, l), -1, dtype=np.int64)
+    ρL = np.full((n_threads, l), np.NINF, dtype=np.float64) # init Pearson correlation matrix left
+    IL = np.full((n_threads, l), -1, dtype=np.int64) # init MPIndex matrix left
 
-    ρR = np.full((n_threads, l), np.NINF, dtype=np.float64)
-    IR = np.full((n_threads, l), -1, dtype=np.int64)
+    ρR = np.full((n_threads, l), np.NINF, dtype=np.float64) # init Pearson correlation matrix right
+    IR = np.full((n_threads, l), -1, dtype=np.int64) # init MPIndex matrix right
 
-    ndist_counts = core._count_diagonal_ndist(diags, m, n_A, n_B)
-    diags_ranges = core._get_array_ranges(ndist_counts, n_threads, False)
+    ndist_counts = core._count_diagonal_ndist(diags, m, n_A, n_B) # the number of distances that would be computed for each diagonal index referenced in `diags`
+    diags_ranges = core._get_array_ranges(ndist_counts, n_threads, False) # splits ndist_counts into n_threads parts
 
-    cov_a = T_B[m - 1 :] - M_T_m_1[:-1]
+    # Kovarianz: Kovarianz ist ein Maß für den linearen Zusammenhang zweier Variablen. Sie ist eng verwandt mit der Korrelation. Ein positives Vorzeichen gibt an, dass sich beide Variablen in dieselbe Richtung bewegen (daher, steigt der Wert einer Variablen an, steigt auch der Wert der anderen). Wird für die distanzberechnung verwendet (?)
+    cov_a = T_B[m - 1 :] - M_T_m_1[:-1] 
     cov_b = T_A[m - 1 :] - μ_Q_m_1[:-1]
     # The next lines are equivalent and left for reference
     # cov_c = np.roll(T_A, 1)
@@ -433,6 +438,7 @@ def _stump(
     cov_d[0] = T_A[-1]
     cov_d[:] = cov_d - μ_Q_m_1
 
+    # jeder thread bekommt einen teil der Zeitreihe und berechnet dafür I, IL, IR, ρ, ρL, ρR
     for thread_idx in prange(n_threads):
         # Compute and update pearson correlations and matrix profile indices
         # within a single thread and avoiding race conditions
@@ -453,8 +459,8 @@ def _stump(
             T_A_subseq_isconstant,
             T_B_subseq_isconstant,
             diags,
-            diags_ranges[thread_idx, 0],
-            diags_ranges[thread_idx, 1],
+            diags_ranges[thread_idx, 0], # diags_start_idx
+            diags_ranges[thread_idx, 1], # diags_stop_idx
             thread_idx,
             ρ,
             ρL,
@@ -464,6 +470,7 @@ def _stump(
             IR,
             ignore_trivial,
         )
+
 
     # Reduction of results from all threads
     for thread_idx in range(1, n_threads):
@@ -632,19 +639,19 @@ def stump(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1):
         ignore_trivial = True
 
     (
-        T_A,
-        μ_Q,
-        σ_Q_inverse,
-        μ_Q_m_1,
+        T_A, # Time Series A
+        μ_Q, # Sliding Mean from A with window length m
+        σ_Q_inverse, # Inverse sliding standard deviation from A with window length m
+        μ_Q_m_1, # Sliding Mean Time Series from A with window length m-1
         T_A_subseq_isfinite,
         T_A_subseq_isconstant,
     ) = core.preprocess_diagonal(T_A, m)
 
     (
-        T_B,
-        M_T,
-        Σ_T_inverse,
-        M_T_m_1,
+        T_B, # Time Series B
+        M_T, # Sliding Mean from B with window length m
+        Σ_T_inverse, # Inverse sliding standard deviation from B with window length m
+        M_T_m_1, # Sliding Mean Time Series from B with window length m-1
         T_B_subseq_isfinite,
         T_B_subseq_isconstant,
     ) = core.preprocess_diagonal(T_B, m)
@@ -676,7 +683,7 @@ def stump(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1):
         diags = np.arange(-(n_A - m + 1) + 1, n_B - m + 1, dtype=np.int64)
 
     P, PL, PR, I, IL, IR = _stump(
-        T_A,
+        T_A, 
         T_B,
         m,
         M_T,
