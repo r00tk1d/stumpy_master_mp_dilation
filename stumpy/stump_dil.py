@@ -182,11 +182,13 @@ def _compute_diagonal(
 
         # for each position in the diagonal
         for i in iter_range:
-            uint64_i = np.uint64(i) # horizontal index
-            uint64_j = np.uint64(i + g) # vertical index
-            uint64_i_fixed = index_dilated[uint64_i]
-            uint64_j_fixed = index_dilated[uint64_j]
+            uint64_i_stumpy = np.uint64(i) # horizontal index
+            uint64_j_stumpy = np.uint64(i + g) # vertical index
+            uint64_i = np.uint64(np.where(index_dilated == uint64_i_stumpy)[0][0]) # find subsequence (with dilation) that starts in original TS at position uint64_i_stumpy
+            uint64_j = np.uint64(np.where(index_dilated == uint64_j_stumpy)[0][0]) # find subsequence (with dilation) that starts in original TS at position uint64_j_stumpy
 
+            if(uint64_i_stumpy > last_valid_index_A or uint64_j_stumpy > last_valid_index_A): # skip invalid indices (invalid subsequences produced from the dilation mapping)
+                continue
 
             if uint64_i == 0 or uint64_j == 0: # wenn QT_start, berechne dot product, ansonsten nutze QT_i-1,j-1
                 cov = (
@@ -208,8 +210,6 @@ def _compute_diagonal(
                     - cov_c[uint64_j] * cov_d[uint64_i]
                 )
 
-            if(uint64_i_fixed > last_valid_index_A or uint64_j_fixed > last_valid_index_A): # skip invalid indices (invalid subsequences produced from the dilation mapping)
-                continue
 
             if T_B_subseq_isfinite[uint64_j] and T_A_subseq_isfinite[uint64_i]:
                 # Neither subsequence contains NaNs
@@ -226,37 +226,37 @@ def _compute_diagonal(
                 # first (i.e. smallest) element in this array. Note that a higher
                 # pearson value corresponds to a lower distance.
 
-                if pearson > ρ[thread_idx, uint64_i_fixed, 0]: # update if distance is lower at i
-                    idx = np.searchsorted(ρ[thread_idx, uint64_i_fixed], pearson)
+                if pearson > ρ[thread_idx, uint64_i_stumpy, 0]: # update if distance is lower at i
+                    idx = np.searchsorted(ρ[thread_idx, uint64_i_stumpy], pearson)
                     
                     core._shift_insert_at_index(
-                        ρ[thread_idx, uint64_i_fixed], idx, pearson, shift="left" # insert distance in ρ
+                        ρ[thread_idx, uint64_i_stumpy], idx, pearson, shift="left" # insert distance in ρ
                     )
                     core._shift_insert_at_index(
-                        I[thread_idx, uint64_i_fixed], idx, uint64_j_fixed, shift="left" # insert NN-Index in I
+                        I[thread_idx, uint64_i_stumpy], idx, uint64_j_stumpy, shift="left" # insert NN-Index in I
                     )
 
                 if ignore_trivial:  # self-joins only
-                    if pearson > ρ[thread_idx, uint64_j_fixed, 0]: # update if lower at j too (because of the diagonal symmetry if A = B (self joins): QT_0,2 = QT_2,0)
-                        idx = np.searchsorted(ρ[thread_idx, uint64_j_fixed], pearson)
+                    if pearson > ρ[thread_idx, uint64_j_stumpy, 0]: # update if lower at j too (because of the diagonal symmetry if A = B (self joins): DT_0,2 = DT_2,0)
+                        idx = np.searchsorted(ρ[thread_idx, uint64_j_stumpy], pearson)
                         core._shift_insert_at_index(
-                            ρ[thread_idx, uint64_j_fixed], idx, pearson, shift="left"
+                            ρ[thread_idx, uint64_j_stumpy], idx, pearson, shift="left"
                         )
                         core._shift_insert_at_index(
-                            I[thread_idx, uint64_j_fixed], idx, uint64_i_fixed, shift="left"
+                            I[thread_idx, uint64_j_stumpy], idx, uint64_i_stumpy, shift="left"
                         )
 
-                    if uint64_i_fixed < uint64_j_fixed:
+                    if uint64_i_stumpy < uint64_j_stumpy:
                         # Position j zeigt nach links auf i (wenn pearson > aktuelle Distanz)
                         # left pearson correlation and left matrix profile index
-                        if pearson > ρL[thread_idx, uint64_j_fixed]:
-                            ρL[thread_idx, uint64_j_fixed] = pearson
-                            IL[thread_idx, uint64_j_fixed] = uint64_i_fixed
+                        if pearson > ρL[thread_idx, uint64_j_stumpy]:
+                            ρL[thread_idx, uint64_j_stumpy] = pearson
+                            IL[thread_idx, uint64_j_stumpy] = uint64_i_stumpy
                         # Position i zeigt nach rechts auf j (wenn pearson > aktuelle Distanz)
                         # right pearson correlation and right matrix profile index
-                        if pearson > ρR[thread_idx, uint64_i_fixed]:
-                            ρR[thread_idx, uint64_i_fixed] = pearson
-                            IR[thread_idx, uint64_i_fixed] = uint64_j_fixed
+                        if pearson > ρR[thread_idx, uint64_i_stumpy]:
+                            ρR[thread_idx, uint64_i_stumpy] = pearson
+                            IR[thread_idx, uint64_i_stumpy] = uint64_j_stumpy
 
     return
 
