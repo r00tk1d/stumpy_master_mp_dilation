@@ -9,13 +9,12 @@ import numba
 from . import core, config
 from .aamp import aamp
 
-# TODO einkommentieren wenn debugging fertig
-# @njit(
-#     # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:],"
-#     # "b1[:], b1[:], b1[:], b1[:], i8[:], i8, i8, i8, f8[:, :, :], f8[:, :],"
-#     # "f8[:, :], i8[:, :, :], i8[:, :], i8[:, :], b1)",
-#     fastmath=True,
-# )
+@njit(
+    # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:],"
+    # "b1[:], b1[:], b1[:], b1[:], i8[:], i8, i8, i8, f8[:, :, :], f8[:, :],"
+    # "f8[:, :], i8[:, :, :], i8[:, :], i8[:, :], b1)",
+    fastmath=True,
+)
 def _compute_diagonal(
     T_A,
     T_B,
@@ -249,13 +248,12 @@ def _compute_diagonal(
     return
 
 
-# TODO wieder einkommentieren nach debugging
-# @njit(
-#     # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], b1[:], b1[:],"
-#     # "b1[:], b1[:], i8[:], b1, i8)",
-#     parallel=True,
-#     fastmath=True,
-# )
+@njit(
+    # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], b1[:], b1[:],"
+    # "b1[:], b1[:], i8[:], b1, i8)",
+    parallel=True,
+    fastmath=True,
+)
 def _stump(
     T_A,
     T_B,
