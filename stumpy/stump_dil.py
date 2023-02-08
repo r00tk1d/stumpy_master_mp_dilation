@@ -175,10 +175,10 @@ def _compute_diagonal(
     for diag_idx in range(diags_start_idx, diags_stop_idx):
         g = diags[diag_idx]
 
-        if g >= 0: # wenn ignore_trivial == True (bei self join), dann wird g auch größer 0 sein. 
-            iter_range = range(0, min(n_A - m + 1, n_B - m + 1 - g))
-        else: # wenn ignore_trivial == False, iter_range wird 
-            iter_range = range(-g, min(n_A - m + 1, n_B - m + 1 - g))
+        if g >= 0: # wenn ignore_trivial == True, dann wird g auch größer 0 sein. 
+            iter_range = range(0, min(n_A - ((m-1)*d + 1) + 1, n_B - ((m-1)*d + 1) + 1 - g))
+        else:
+            iter_range = range(-g, min(n_A - ((m-1)*d + 1) + 1, n_B - ((m-1)*d + 1) + 1 - g))
 
         # for each position in the diagonal
         for i in iter_range:
@@ -190,7 +190,7 @@ def _compute_diagonal(
             if(uint64_i_stumpy > last_valid_index_A or uint64_j_stumpy > last_valid_index_A): # skip invalid indices (invalid subsequences produced from the dilation mapping)
                 continue
 
-            if uint64_i == 0 or uint64_j == 0: # wenn QT_start, berechne dot product, ansonsten nutze QT_i-1,j-1
+            if True: # uint64_i_stumpy == 0 or uint64_j_stumpy == 0 # wenn QT_start, berechne dot product, ansonsten nutze QT_i-1,j-1
                 cov = (
                     np.dot(
                         (T_B[uint64_j : uint64_j + uint64_m] - M_T[uint64_j]),
@@ -431,7 +431,7 @@ def _stump(
     ρR = np.full((n_threads, l), np.NINF, dtype=np.float64) # init Pearson correlation matrix right
     IR = np.full((n_threads, l), -1, dtype=np.int64) # init MPIndex matrix right
 
-    ndist_counts = core._count_diagonal_ndist(diags, m, n_A, n_B) # the number of distances that would be computed for each diagonal index referenced in `diags`
+    ndist_counts = core._count_diagonal_ndist(diags, ((m-1)*d + 1), n_A, n_B) # the number of distances that would be computed for each diagonal index referenced in `diags`
     diags_ranges = core._get_array_ranges(ndist_counts, n_threads, False) # splits ndist_counts into n_threads parts
 
     # Kovarianz: Kovarianz ist ein Maß für den linearen Zusammenhang zweier Variablen. Sie ist eng verwandt mit der Korrelation. Ein positives Vorzeichen gibt an, dass sich beide Variablen in dieselbe Richtung bewegen (daher, steigt der Wert einer Variablen an, steigt auch der Wert der anderen). Wird für die distanzberechnung verwendet (?)
@@ -663,6 +663,8 @@ def stump_dil(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1,
     if T_B is None:
         T_B = T_A
         ignore_trivial = True
+    else:
+        T_B = dilation_mapping(T_B, d)
 
     (
         T_A, # Time Series A
@@ -704,9 +706,9 @@ def stump_dil(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1,
     excl_zone = int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM))
 
     if ignore_trivial:
-        diags = np.arange(excl_zone + 1, n_A - m + 1, dtype=np.int64)
+        diags = np.arange(excl_zone + 1, n_A - ((m-1)*d + 1) + 1, dtype=np.int64)
     else:
-        diags = np.arange(-(n_A - m + 1) + 1, n_B - m + 1, dtype=np.int64)
+        diags = np.arange(-(n_A - ((m-1)*d + 1) + 1) + 1, n_B - ((m-1)*d + 1) + 1, dtype=np.int64)
 
     P, PL, PR, I, IL, IR = _stump(
         T_A, 

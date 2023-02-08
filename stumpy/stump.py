@@ -172,7 +172,7 @@ def _compute_diagonal(
 
         if g >= 0: # wenn ignore_trivial == True, dann wird g auch größer 0 sein. 
             iter_range = range(0, min(n_A - m + 1, n_B - m + 1 - g))
-        else: # wenn ignore_trivial == False, iter_range wird 
+        else:
             iter_range = range(-g, min(n_A - m + 1, n_B - m + 1 - g))
 
         # for each position in the diagonal
@@ -200,6 +200,7 @@ def _compute_diagonal(
                     - cov_c[uint64_j] * cov_d[uint64_i]
                 )
 
+
             if T_B_subseq_isfinite[uint64_j] and T_A_subseq_isfinite[uint64_i]:
                 # Neither subsequence contains NaNs
                 if T_B_subseq_isconstant[uint64_j] or T_A_subseq_isconstant[uint64_i]:
@@ -214,6 +215,7 @@ def _compute_diagonal(
                 # when the newly-calculated `pearson` value becomes greater than the
                 # first (i.e. smallest) element in this array. Note that a higher
                 # pearson value corresponds to a lower distance.
+                
                 if pearson > ρ[thread_idx, uint64_i, 0]: # update if distance is lower at i
                     idx = np.searchsorted(ρ[thread_idx, uint64_i], pearson)
                     core._shift_insert_at_index(
