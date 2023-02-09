@@ -168,7 +168,7 @@ def _compute_diagonal(
     m_inverse = 1.0 / m # inverse window length
     constant = (m - 1) * m_inverse * m_inverse  # (m - 1)/(m * m)
     uint64_m = np.uint64(m) # window length m as np uint64
-    last_valid_index_A = n_A - ((m-1)*d + 1)  
+    last_valid_index_A = n_A - ((m-1)*d + 1)
     # the longer time series defines the length of the resulting matrix_profile
 
     # for each diagonal
@@ -176,21 +176,16 @@ def _compute_diagonal(
         g = diags[diag_idx]
 
         if g >= 0: # wenn ignore_trivial == True, dann wird g auch größer 0 sein. 
-            iter_range = range(0, min(n_A - ((m-1)*d + 1) + 1, n_B - ((m-1)*d + 1) + 1 - g))
+            iter_range = range(0, min(n_A - m + 1, n_B - m + 1 - g))
         else:
-            iter_range = range(-g, min(n_A - ((m-1)*d + 1) + 1, n_B - ((m-1)*d + 1) + 1 - g))
+            iter_range = range(-g, min(n_A - m + 1, n_B - m + 1 - g))
 
         # for each position in the diagonal
         for i in iter_range:
-            uint64_i_stumpy = np.uint64(i) # horizontal index
-            uint64_j_stumpy = np.uint64(i + g) # vertical index
-            uint64_i = np.uint64(np.where(index_dilated == uint64_i_stumpy)[0][0]) # find subsequence (with dilation) that starts in original TS at position uint64_i_stumpy
-            uint64_j = np.uint64(np.where(index_dilated == uint64_j_stumpy)[0][0]) # find subsequence (with dilation) that starts in original TS at position uint64_j_stumpy
+            uint64_i = np.uint64(i) # horizontal index
+            uint64_j = np.uint64(i + g) # vertical index
 
-            if(uint64_i_stumpy > last_valid_index_A or uint64_j_stumpy > last_valid_index_A): # skip invalid indices (invalid subsequences produced from the dilation mapping)
-                continue
-
-            if True: # uint64_i_stumpy == 0 or uint64_j_stumpy == 0 # wenn QT_start, berechne dot product, ansonsten nutze QT_i-1,j-1
+            if uint64_i == 0 or uint64_j == 0: # wenn QT_start, berechne dot product, ansonsten nutze QT_i-1,j-1
                 cov = (
                     np.dot(
                         (T_B[uint64_j : uint64_j + uint64_m] - M_T[uint64_j]),
@@ -221,42 +216,59 @@ def _compute_diagonal(
                 if T_B_subseq_isconstant[uint64_j] and T_A_subseq_isconstant[uint64_i]:
                     pearson = 1.0
 
+                # Fix Index 
+                uint64_i_fixed = np.uint64(index_dilated[uint64_i]) # find startindex of subsequence in original TS
+                uint64_j_fixed = np.uint64(index_dilated[uint64_j]) # find startindex of subsequence in original TS
+
+                if(uint64_i_fixed > last_valid_index_A or uint64_j_fixed > last_valid_index_A): # skip invalid indices (invalid subsequences produced from the dilation mapping)
+                    continue
+
                 # `ρ[thread_idx, i, :]` is sorted ascendingly and MUST be updated
                 # when the newly-calculated `pearson` value becomes greater than the
                 # first (i.e. smallest) element in this array. Note that a higher
                 # pearson value corresponds to a lower distance.
-
-                if pearson > ρ[thread_idx, uint64_i_stumpy, 0]: # update if distance is lower at i
-                    idx = np.searchsorted(ρ[thread_idx, uint64_i_stumpy], pearson)
+                if pearson > ρ[thread_idx, uint64_i_fixed, 0]: # update if distance is lower at i
+                    idx = np.searchsorted(ρ[thread_idx, uint64_i_fixed], pearson)
                     
                     core._shift_insert_at_index(
-                        ρ[thread_idx, uint64_i_stumpy], idx, pearson, shift="left" # insert distance in ρ
+                        ρ[thread_idx, uint64_i_fixed], idx, pearson, shift="left" # insert distance in ρ
                     )
                     core._shift_insert_at_index(
-                        I[thread_idx, uint64_i_stumpy], idx, uint64_j_stumpy, shift="left" # insert NN-Index in I
+                        I[thread_idx, uint64_i_fixed], idx, uint64_j_fixed, shift="left" # insert NN-Index in I
                     )
 
                 if ignore_trivial:  # self-joins only
-                    if pearson > ρ[thread_idx, uint64_j_stumpy, 0]: # update if lower at j too (because of the diagonal symmetry if A = B (self joins): DT_0,2 = DT_2,0)
-                        idx = np.searchsorted(ρ[thread_idx, uint64_j_stumpy], pearson)
+                    if pearson > ρ[thread_idx, uint64_j_fixed, 0]: # update if lower at j too (because of the diagonal symmetry if A = B (self joins): DT_0,2 = DT_2,0)
+                        idx = np.searchsorted(ρ[thread_idx, uint64_j_fixed], pearson)
                         core._shift_insert_at_index(
-                            ρ[thread_idx, uint64_j_stumpy], idx, pearson, shift="left"
+                            ρ[thread_idx, uint64_j_fixed], idx, pearson, shift="left"
                         )
                         core._shift_insert_at_index(
-                            I[thread_idx, uint64_j_stumpy], idx, uint64_i_stumpy, shift="left"
+                            I[thread_idx, uint64_j_fixed], idx, uint64_i_fixed, shift="left"
                         )
 
-                    if uint64_i_stumpy < uint64_j_stumpy:
-                        # Position j zeigt nach links auf i (wenn pearson > aktuelle Distanz)
+                    if uint64_i_fixed < uint64_j_fixed:
+                        # i <- j
                         # left pearson correlation and left matrix profile index
-                        if pearson > ρL[thread_idx, uint64_j_stumpy]:
-                            ρL[thread_idx, uint64_j_stumpy] = pearson
-                            IL[thread_idx, uint64_j_stumpy] = uint64_i_stumpy
-                        # Position i zeigt nach rechts auf j (wenn pearson > aktuelle Distanz)
+                        if pearson > ρL[thread_idx, uint64_j_fixed]:
+                            ρL[thread_idx, uint64_j_fixed] = pearson
+                            IL[thread_idx, uint64_j_fixed] = uint64_i_fixed
+                        # Position i -> j (wenn pearson > aktuelle Distanz)
                         # right pearson correlation and right matrix profile index
-                        if pearson > ρR[thread_idx, uint64_i_stumpy]:
-                            ρR[thread_idx, uint64_i_stumpy] = pearson
-                            IR[thread_idx, uint64_i_stumpy] = uint64_j_stumpy
+                        if pearson > ρR[thread_idx, uint64_i_fixed]:
+                            ρR[thread_idx, uint64_i_fixed] = pearson
+                            IR[thread_idx, uint64_i_fixed] = uint64_j_fixed
+                    elif uint64_i_fixed > uint64_j_fixed: # needed because of dilation mapping
+                        # j <- i
+                        # left pearson correlation and left matrix profile index
+                        if pearson > ρL[thread_idx, uint64_i_fixed]:
+                            ρL[thread_idx, uint64_i_fixed] = pearson
+                            IL[thread_idx, uint64_i_fixed] = uint64_j_fixed
+                        # j -> i
+                        # right pearson correlation and right matrix profile index
+                        if pearson > ρR[thread_idx, uint64_j_fixed]:
+                            ρR[thread_idx, uint64_j_fixed] = pearson
+                            IR[thread_idx, uint64_j_fixed] = uint64_i_fixed
 
     return
 
@@ -431,7 +443,7 @@ def _stump(
     ρR = np.full((n_threads, l), np.NINF, dtype=np.float64) # init Pearson correlation matrix right
     IR = np.full((n_threads, l), -1, dtype=np.int64) # init MPIndex matrix right
 
-    ndist_counts = core._count_diagonal_ndist(diags, ((m-1)*d + 1), n_A, n_B) # the number of distances that would be computed for each diagonal index referenced in `diags`
+    ndist_counts = core._count_diagonal_ndist(diags, m, n_A, n_B) # the number of distances that would be computed for each diagonal index referenced in `diags`
     diags_ranges = core._get_array_ranges(ndist_counts, n_threads, False) # splits ndist_counts into n_threads parts
 
     # Kovarianz: Kovarianz ist ein Maß für den linearen Zusammenhang zweier Variablen. Sie ist eng verwandt mit der Korrelation. Ein positives Vorzeichen gibt an, dass sich beide Variablen in dieselbe Richtung bewegen (daher, steigt der Wert einer Variablen an, steigt auch der Wert der anderen). Wird für die distanzberechnung verwendet (?)
@@ -703,12 +715,12 @@ def stump_dil(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1,
     n_B = T_B.shape[0]
     l = n_A - ((m-1)*d + 1) + 1 # ehemalig n_A - m + 1, aber m ist nun die range mit dilation
 
-    excl_zone = int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM))
+    excl_zone = 0 #int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM)) #TODO exclusion zone dafür später nach der Berechnung anwenden?
 
     if ignore_trivial:
-        diags = np.arange(excl_zone + 1, n_A - ((m-1)*d + 1) + 1, dtype=np.int64)
+        diags = np.arange(excl_zone + 1, n_A - m + 1, dtype=np.int64)
     else:
-        diags = np.arange(-(n_A - ((m-1)*d + 1) + 1) + 1, n_B - ((m-1)*d + 1) + 1, dtype=np.int64)
+        diags = np.arange(-(n_A - m + 1) + 1, n_B - m + 1, dtype=np.int64)
 
     P, PL, PR, I, IL, IR = _stump(
         T_A, 
