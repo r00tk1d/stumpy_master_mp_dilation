@@ -9,13 +9,12 @@ import numba
 from . import core, config
 from .aamp import aamp
 
-# TODO einkommentieren wenn debugging fertig
-# @njit(
-#     # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:],"
-#     # "b1[:], b1[:], b1[:], b1[:], i8[:], i8, i8, i8, f8[:, :, :], f8[:, :],"
-#     # "f8[:, :], i8[:, :, :], i8[:, :], i8[:, :], b1)",
-#     fastmath=True,
-# )
+@njit(
+    # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], f8[:],"
+    # "b1[:], b1[:], b1[:], b1[:], i8[:], i8, i8, i8, f8[:, :, :], f8[:, :],"
+    # "f8[:, :], i8[:, :, :], i8[:, :], i8[:, :], b1)",
+    fastmath=True,
+)
 def _compute_diagonal(
     T_A,
     T_B,
@@ -169,7 +168,7 @@ def _compute_diagonal(
     constant = (m - 1) * m_inverse * m_inverse  # (m - 1)/(m * m)
     uint64_m = np.uint64(m) # window length m as np uint64
     last_valid_index_A = n_A - ((m-1)*d + 1)
-    # the longer time series defines the length of the resulting matrix_profile
+    excl_zone = int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM))
 
     # for each diagonal
     for diag_idx in range(diags_start_idx, diags_stop_idx):
@@ -220,7 +219,10 @@ def _compute_diagonal(
                 uint64_i_fixed = np.uint64(index_dilated[uint64_i]) # find startindex of subsequence in original TS
                 uint64_j_fixed = np.uint64(index_dilated[uint64_j]) # find startindex of subsequence in original TS
 
-                if(uint64_i_fixed > last_valid_index_A or uint64_j_fixed > last_valid_index_A): # skip invalid indices (invalid subsequences produced from the dilation mapping)
+                if uint64_i_fixed > last_valid_index_A or uint64_j_fixed > last_valid_index_A: # skip invalid indices (invalid subsequences produced from the dilation mapping)
+                    continue
+
+                if ignore_trivial and np.abs(np.int64(uint64_i_fixed)-np.int64(uint64_j_fixed)) <= excl_zone: # skip subsequence pairs that are in the exclusion zone
                     continue
 
                 # `ρ[thread_idx, i, :]` is sorted ascendingly and MUST be updated
@@ -272,8 +274,7 @@ def _compute_diagonal(
 
     return
 
-
-# TODO wieder einkommentieren nach debugging
+# TODO
 # @njit(
 #     # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], b1[:], b1[:],"
 #     # "b1[:], b1[:], i8[:], b1, i8)",
@@ -715,7 +716,7 @@ def stump_dil(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1,
     n_B = T_B.shape[0]
     l = n_A - ((m-1)*d + 1) + 1 # ehemalig n_A - m + 1, aber m ist nun die range mit dilation
 
-    excl_zone = 0 #int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM)) #TODO exclusion zone dafür später nach der Berechnung anwenden?
+    excl_zone = 0 #int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM))
 
     if ignore_trivial:
         diags = np.arange(excl_zone + 1, n_A - m + 1, dtype=np.int64)
