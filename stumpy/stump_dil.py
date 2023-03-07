@@ -167,8 +167,9 @@ def _compute_diagonal(
     m_inverse = 1.0 / m # inverse window length
     constant = (m - 1) * m_inverse * m_inverse  # (m - 1)/(m * m)
     uint64_m = np.uint64(m) # window length m as np uint64
-    last_valid_index_A = n_A - ((m-1)*d + 1)
-    excl_zone = int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM))
+    w = (m-1)*d + 1
+    last_valid_index_A = n_A - w
+    excl_zone = int(np.ceil(w / config.STUMPY_EXCL_ZONE_DENOM)) 
 
     # for each diagonal
     for diag_idx in range(diags_start_idx, diags_stop_idx):
