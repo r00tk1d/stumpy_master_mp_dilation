@@ -552,7 +552,7 @@ def dilation_mapping(X: np.ndarray, d: int) -> np.ndarray:
         result = np.concatenate((result, next))
     return result
 
-@core.non_normalized(aamp)
+# @core.non_normalized(aamp)
 def stump_dil(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1, d=1):
     """
     Compute the z-normalized matrix profile
