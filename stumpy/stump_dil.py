@@ -250,38 +250,26 @@ def _compute_diagonal(
                             I[thread_idx, uint64_j_fixed], idx, uint64_i_fixed, shift="left"
                         )
 
-                    if uint64_i_fixed < uint64_j_fixed:
-                        # i <- j
+                    if uint64_i_fixed != uint64_j_fixed:
                         # left pearson correlation and left matrix profile index
-                        if pearson > ρL[thread_idx, uint64_j_fixed]:
-                            ρL[thread_idx, uint64_j_fixed] = pearson
-                            IL[thread_idx, uint64_j_fixed] = uint64_i_fixed
-                        # Position i -> j (wenn pearson > aktuelle Distanz)
+                        left_idx = min(uint64_i_fixed, uint64_j_fixed)
+                        right_idx = max(uint64_i_fixed, uint64_j_fixed)
+                        if pearson > ρL[thread_idx, right_idx]:
+                            ρL[thread_idx, right_idx] = pearson
+                            IL[thread_idx, right_idx] = left_idx
                         # right pearson correlation and right matrix profile index
-                        if pearson > ρR[thread_idx, uint64_i_fixed]:
-                            ρR[thread_idx, uint64_i_fixed] = pearson
-                            IR[thread_idx, uint64_i_fixed] = uint64_j_fixed
-                    elif uint64_i_fixed > uint64_j_fixed: # needed because of dilation mapping
-                        # j <- i
-                        # left pearson correlation and left matrix profile index
-                        if pearson > ρL[thread_idx, uint64_i_fixed]:
-                            ρL[thread_idx, uint64_i_fixed] = pearson
-                            IL[thread_idx, uint64_i_fixed] = uint64_j_fixed
-                        # j -> i
-                        # right pearson correlation and right matrix profile index
-                        if pearson > ρR[thread_idx, uint64_j_fixed]:
-                            ρR[thread_idx, uint64_j_fixed] = pearson
-                            IR[thread_idx, uint64_j_fixed] = uint64_i_fixed
+                        if pearson > ρR[thread_idx, left_idx]:
+                            ρR[thread_idx, left_idx] = pearson
+                            IR[thread_idx, left_idx] = right_idx
 
     return
 
-# TODO
-# @njit(
-#     # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], b1[:], b1[:],"
-#     # "b1[:], b1[:], i8[:], b1, i8)",
-#     parallel=True,
-#     fastmath=True,
-# )
+@njit(
+    # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], b1[:], b1[:],"
+    # "b1[:], b1[:], i8[:], b1, i8)",
+    parallel=True,
+    fastmath=True,
+)
 def _stump(
     T_A,
     T_B,

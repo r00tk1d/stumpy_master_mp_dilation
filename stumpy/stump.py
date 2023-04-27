@@ -215,9 +215,9 @@ def _compute_diagonal(
                 # when the newly-calculated `pearson` value becomes greater than the
                 # first (i.e. smallest) element in this array. Note that a higher
                 # pearson value corresponds to a lower distance.
-                
                 if pearson > ρ[thread_idx, uint64_i, 0]: # update if distance is lower at i
                     idx = np.searchsorted(ρ[thread_idx, uint64_i], pearson)
+
                     core._shift_insert_at_index(
                         ρ[thread_idx, uint64_i], idx, pearson, shift="left"
                     )
@@ -236,19 +236,16 @@ def _compute_diagonal(
                         )
 
                     if uint64_i < uint64_j:
-                        # Position j zeigt nach links auf i (wenn pearson > aktuelle Distanz)
                         # left pearson correlation and left matrix profile index
                         if pearson > ρL[thread_idx, uint64_j]:
                             ρL[thread_idx, uint64_j] = pearson
                             IL[thread_idx, uint64_j] = uint64_i
-                        # Position i zeigt nach rechts auf j (wenn pearson > aktuelle Distanz)
                         # right pearson correlation and right matrix profile index
                         if pearson > ρR[thread_idx, uint64_i]:
                             ρR[thread_idx, uint64_i] = pearson
                             IR[thread_idx, uint64_i] = uint64_j
 
     return
-
 
 @njit(
     # "(f8[:], f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:], b1[:], b1[:],"
