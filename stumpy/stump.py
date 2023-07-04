@@ -170,7 +170,7 @@ def _compute_diagonal(
     for diag_idx in range(diags_start_idx, diags_stop_idx):
         g = diags[diag_idx]
 
-        if g >= 0: # wenn ignore_trivial == True, dann wird g auch größer 0 sein. 
+        if g >= 0:
             iter_range = range(0, min(n_A - m + 1, n_B - m + 1 - g))
         else:
             iter_range = range(-g, min(n_A - m + 1, n_B - m + 1 - g))
@@ -180,7 +180,7 @@ def _compute_diagonal(
             uint64_i = np.uint64(i) # horizontal index
             uint64_j = np.uint64(i + g) # vertical index
 
-            if uint64_i == 0 or uint64_j == 0: # wenn QT_start, berechne dot product, ansonsten nutze QT_i-1,j-1
+            if uint64_i == 0 or uint64_j == 0: # if QT_start, use dot product, else use QT_i-1,j-1
                 cov = (
                     np.dot(
                         (T_B[uint64_j : uint64_j + uint64_m] - M_T[uint64_j]),
@@ -206,7 +206,7 @@ def _compute_diagonal(
                 if T_B_subseq_isconstant[uint64_j] or T_A_subseq_isconstant[uint64_i]:
                     pearson = 0.5
                 else:
-                    pearson = cov * Σ_T_inverse[uint64_j] * σ_Q_inverse[uint64_i] # Berechnung distance
+                    pearson = cov * Σ_T_inverse[uint64_j] * σ_Q_inverse[uint64_i] # calculate distance
 
                 if T_B_subseq_isconstant[uint64_j] and T_A_subseq_isconstant[uint64_i]:
                     pearson = 1.0
@@ -417,7 +417,7 @@ def _stump(
     ndist_counts = core._count_diagonal_ndist(diags, m, n_A, n_B) # the number of distances that would be computed for each diagonal index referenced in `diags`
     diags_ranges = core._get_array_ranges(ndist_counts, n_threads, False) # splits ndist_counts into n_threads parts
 
-    # Kovarianz: Kovarianz ist ein Maß für den linearen Zusammenhang zweier Variablen. Sie ist eng verwandt mit der Korrelation. Ein positives Vorzeichen gibt an, dass sich beide Variablen in dieselbe Richtung bewegen (daher, steigt der Wert einer Variablen an, steigt auch der Wert der anderen). Wird für die distanzberechnung verwendet (?)
+
     cov_a = T_B[m - 1 :] - M_T_m_1[:-1] 
     cov_b = T_A[m - 1 :] - μ_Q_m_1[:-1]
     # The next lines are equivalent and left for reference
@@ -435,7 +435,7 @@ def _stump(
     cov_d[0] = T_A[-1]
     cov_d[:] = cov_d - μ_Q_m_1
 
-    # jeder thread bekommt einen teil der Zeitreihe und berechnet dafür I, IL, IR, ρ, ρL, ρR
+    # every thread gets a part of the time series and calculates I, IL, IR, ρ, ρL, ρR
     for thread_idx in prange(n_threads):
         # Compute and update pearson correlations and matrix profile indices
         # within a single thread and avoiding race conditions

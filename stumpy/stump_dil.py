@@ -175,7 +175,7 @@ def _compute_diagonal(
     for diag_idx in range(diags_start_idx, diags_stop_idx):
         g = diags[diag_idx]
 
-        if g >= 0: # wenn ignore_trivial == True, dann wird g auch größer 0 sein. 
+        if g >= 0:
             iter_range = range(0, min(n_A - m + 1, n_B - m + 1 - g))
         else:
             iter_range = range(-g, min(n_A - m + 1, n_B - m + 1 - g))
@@ -211,12 +211,12 @@ def _compute_diagonal(
                 if T_B_subseq_isconstant[uint64_j] or T_A_subseq_isconstant[uint64_i]:
                     pearson = 0.5
                 else:
-                    pearson = cov * Σ_T_inverse[uint64_j] * σ_Q_inverse[uint64_i] # Berechnung distance
+                    pearson = cov * Σ_T_inverse[uint64_j] * σ_Q_inverse[uint64_i] # calculate distance
 
                 if T_B_subseq_isconstant[uint64_j] and T_A_subseq_isconstant[uint64_i]:
                     pearson = 1.0
 
-                # Fix Index 
+                # Remap Index 
                 uint64_i_fixed = np.uint64(index_dilated[uint64_i]) # find startindex of subsequence in original TS
                 uint64_j_fixed = np.uint64(index_dilated[uint64_j]) # find startindex of subsequence in original TS
 
@@ -421,7 +421,7 @@ def _stump(
     """
     n_A = T_A.shape[0] # length A
     n_B = T_B.shape[0] # length B
-    l = n_A - ((m-1)*d + 1) + 1 # number of subsequences in A (ehemalig n_A - m + 1, aber m ist nun die range mit dilation)
+    l = n_A - ((m-1)*d + 1) + 1 # number of subsequences in A (was n_A - m + 1, but m is now the window coverage with dilation)
     n_threads = numba.config.NUMBA_NUM_THREADS # default: num threads = num of CPU cores available (for gruenau8 36*2=72)
 
     ρ = np.full((n_threads, l, k), np.NINF, dtype=np.float64) # init Pearson correlation matrix
@@ -436,7 +436,7 @@ def _stump(
     ndist_counts = core._count_diagonal_ndist(diags, m, n_A, n_B) # the number of distances that would be computed for each diagonal index referenced in `diags`
     diags_ranges = core._get_array_ranges(ndist_counts, n_threads, False) # splits ndist_counts into n_threads parts
 
-    # Kovarianz: Kovarianz ist ein Maß für den linearen Zusammenhang zweier Variablen. Sie ist eng verwandt mit der Korrelation. Ein positives Vorzeichen gibt an, dass sich beide Variablen in dieselbe Richtung bewegen (daher, steigt der Wert einer Variablen an, steigt auch der Wert der anderen). Wird für die distanzberechnung verwendet (?)
+
     cov_a = T_B[m - 1 :] - M_T_m_1[:-1] 
     cov_b = T_A[m - 1 :] - μ_Q_m_1[:-1]
     # The next lines are equivalent and left for reference
@@ -454,7 +454,7 @@ def _stump(
     cov_d[0] = T_A[-1]
     cov_d[:] = cov_d - μ_Q_m_1
 
-    # jeder thread bekommt einen teil der Zeitreihe und berechnet dafür I, IL, IR, ρ, ρL, ρR
+    # every thread gets a part of the time series and calculates I, IL, IR, ρ, ρL, ρR
     for thread_idx in prange(n_threads):
         # Compute and update pearson correlations and matrix profile indices
         # within a single thread and avoiding race conditions
@@ -703,7 +703,7 @@ def stump_dil(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1,
 
     n_A = T_A.shape[0]
     n_B = T_B.shape[0]
-    l = n_A - ((m-1)*d + 1) + 1 # ehemalig n_A - m + 1, aber m ist nun die range mit dilation
+    l = n_A - ((m-1)*d + 1) + 1 # window coverage = (m-1)*d + 1
 
     excl_zone = 0 #int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM))
 
