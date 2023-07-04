@@ -42,6 +42,8 @@ def _compute_diagonal(
     IL,
     IR,
     ignore_trivial,
+    index_dilated,
+    d
 ):
     """
     Compute (Numba JIT-compiled) and update the (top-k) Pearson correlation (ρ),
@@ -165,6 +167,9 @@ def _compute_diagonal(
     m_inverse = 1.0 / m # inverse window length
     constant = (m - 1) * m_inverse * m_inverse  # (m - 1)/(m * m)
     uint64_m = np.uint64(m) # window length m as np uint64
+    w = (m-1)*d + 1
+    last_valid_index_A = n_A - w
+    excl_zone = int(np.ceil(w / config.STUMPY_EXCL_ZONE_DENOM)) 
 
     # for each diagonal
     for diag_idx in range(diags_start_idx, diags_stop_idx):
@@ -180,7 +185,7 @@ def _compute_diagonal(
             uint64_i = np.uint64(i) # horizontal index
             uint64_j = np.uint64(i + g) # vertical index
 
-            if uint64_i == 0 or uint64_j == 0: # if QT_start, use dot product, else use QT_i-1,j-1
+            if uint64_i == 0 or uint64_j == 0: # wenn QT_start, berechne dot product, ansonsten nutze QT_i-1,j-1
                 cov = (
                     np.dot(
                         (T_B[uint64_j : uint64_j + uint64_m] - M_T[uint64_j]),
@@ -211,39 +216,51 @@ def _compute_diagonal(
                 if T_B_subseq_isconstant[uint64_j] and T_A_subseq_isconstant[uint64_i]:
                     pearson = 1.0
 
+                # Remap Index 
+                uint64_i_fixed = np.uint64(index_dilated[uint64_i]) # find startindex of subsequence in original TS
+                uint64_j_fixed = np.uint64(index_dilated[uint64_j]) # find startindex of subsequence in original TS
+
+                if uint64_i_fixed > last_valid_index_A or uint64_j_fixed > last_valid_index_A: # skip invalid indices (invalid subsequences produced from the dilation mapping)
+                    continue
+
+                if ignore_trivial and np.abs(np.int64(uint64_i_fixed)-np.int64(uint64_j_fixed)) <= excl_zone: # skip subsequence pairs that are in the exclusion zone
+                    continue
+
                 # `ρ[thread_idx, i, :]` is sorted ascendingly and MUST be updated
                 # when the newly-calculated `pearson` value becomes greater than the
                 # first (i.e. smallest) element in this array. Note that a higher
                 # pearson value corresponds to a lower distance.
-                if pearson > ρ[thread_idx, uint64_i, 0]: # update if distance is lower at i
-                    idx = np.searchsorted(ρ[thread_idx, uint64_i], pearson)
-
+                if pearson > ρ[thread_idx, uint64_i_fixed, 0]: # update if distance is lower at i
+                    idx = np.searchsorted(ρ[thread_idx, uint64_i_fixed], pearson)
+                    
                     core._shift_insert_at_index(
-                        ρ[thread_idx, uint64_i], idx, pearson, shift="left"
+                        ρ[thread_idx, uint64_i_fixed], idx, pearson, shift="left" # insert distance in ρ
                     )
                     core._shift_insert_at_index(
-                        I[thread_idx, uint64_i], idx, uint64_j, shift="left"
+                        I[thread_idx, uint64_i_fixed], idx, uint64_j_fixed, shift="left" # insert NN-Index in I
                     )
 
                 if ignore_trivial:  # self-joins only
-                    if pearson > ρ[thread_idx, uint64_j, 0]: # update if lower at j too (because of the diagonal symmetry if A = B (self joins): QT_0,2 = QT_2,0)
-                        idx = np.searchsorted(ρ[thread_idx, uint64_j], pearson)
+                    if pearson > ρ[thread_idx, uint64_j_fixed, 0]: # update if lower at j too (because of the diagonal symmetry if A = B (self joins): DT_0,2 = DT_2,0)
+                        idx = np.searchsorted(ρ[thread_idx, uint64_j_fixed], pearson)
                         core._shift_insert_at_index(
-                            ρ[thread_idx, uint64_j], idx, pearson, shift="left"
+                            ρ[thread_idx, uint64_j_fixed], idx, pearson, shift="left"
                         )
                         core._shift_insert_at_index(
-                            I[thread_idx, uint64_j], idx, uint64_i, shift="left"
+                            I[thread_idx, uint64_j_fixed], idx, uint64_i_fixed, shift="left"
                         )
 
-                    if uint64_i < uint64_j:
+                    if uint64_i_fixed != uint64_j_fixed:
                         # left pearson correlation and left matrix profile index
-                        if pearson > ρL[thread_idx, uint64_j]:
-                            ρL[thread_idx, uint64_j] = pearson
-                            IL[thread_idx, uint64_j] = uint64_i
+                        left_idx = min(uint64_i_fixed, uint64_j_fixed)
+                        right_idx = max(uint64_i_fixed, uint64_j_fixed)
+                        if pearson > ρL[thread_idx, right_idx]:
+                            ρL[thread_idx, right_idx] = pearson
+                            IL[thread_idx, right_idx] = left_idx
                         # right pearson correlation and right matrix profile index
-                        if pearson > ρR[thread_idx, uint64_i]:
-                            ρR[thread_idx, uint64_i] = pearson
-                            IR[thread_idx, uint64_i] = uint64_j
+                        if pearson > ρR[thread_idx, left_idx]:
+                            ρR[thread_idx, left_idx] = pearson
+                            IR[thread_idx, left_idx] = right_idx
 
     return
 
@@ -270,6 +287,8 @@ def _stump(
     diags,
     ignore_trivial,
     k,
+    index_dilated,
+    d
 ):
     """
     A Numba JIT-compiled version of STOMPopt with Pearson correlations for parallel
@@ -402,7 +421,7 @@ def _stump(
     """
     n_A = T_A.shape[0] # length A
     n_B = T_B.shape[0] # length B
-    l = n_A - m + 1 # l: startindex for last subsequence in T / number of subsequences in A
+    l = n_A - ((m-1)*d + 1) + 1 # number of subsequences in A (was n_A - m + 1, but m is now the window coverage with dilation)
     n_threads = numba.config.NUMBA_NUM_THREADS # default: num threads = num of CPU cores available (for gruenau8 36*2=72)
 
     ρ = np.full((n_threads, l, k), np.NINF, dtype=np.float64) # init Pearson correlation matrix
@@ -466,6 +485,8 @@ def _stump(
             IL,
             IR,
             ignore_trivial,
+            index_dilated,
+            d
         )
 
 
@@ -512,9 +533,15 @@ def _stump(
         IR[0],
     )
 
+def dilation_mapping(X: np.ndarray, d: int) -> np.ndarray:
+    result = X[0::d]
+    for i in range(1, d):
+        next = X[i::d]
+        result = np.concatenate((result, next))
+    return result
 
-@core.non_normalized(aamp)
-def stump(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1):
+# @core.non_normalized(aamp)
+def stump_dil(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1, d=1):
     """
     Compute the z-normalized matrix profile
 
@@ -631,9 +658,15 @@ def stump(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1):
            [2.694073918063438, 1, 1, -1],
            [0.11633857113691416, 0, 0, -1]], dtype=object)
     """
+    T_A = dilation_mapping(T_A, d)
+    index = np.arange(T_A.shape[0])
+    index_dilated = dilation_mapping(index, d)
+
     if T_B is None:
         T_B = T_A
         ignore_trivial = True
+    else:
+        T_B = dilation_mapping(T_B, d)
 
     (
         T_A, # Time Series A
@@ -670,9 +703,9 @@ def stump(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1):
 
     n_A = T_A.shape[0]
     n_B = T_B.shape[0]
-    l = n_A - m + 1
+    l = n_A - ((m-1)*d + 1) + 1 # window coverage = (m-1)*d + 1
 
-    excl_zone = int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM))
+    excl_zone = 0 #int(np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM))
 
     if ignore_trivial:
         diags = np.arange(excl_zone + 1, n_A - m + 1, dtype=np.int64)
@@ -696,6 +729,8 @@ def stump(T_A, m, T_B=None, ignore_trivial=True, normalize=True, p=2.0, k=1):
         diags,
         ignore_trivial,
         k,
+        index_dilated,
+        d
     )
 
     out = np.empty((l, 2 * k + 2), dtype=object)  # last two columns are to
