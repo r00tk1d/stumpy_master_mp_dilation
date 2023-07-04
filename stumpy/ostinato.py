@@ -3,8 +3,9 @@
 # STUMPY is a trademark of TD Ameritrade IP Company, Inc. All rights reserved.
 
 import numpy as np
+import copy
 
-from . import core, stump, stumped
+from . import core, stump, stumped, stump_dil
 from .aamp_ostinato import aamp_ostinato, aamp_ostinatoed
 
 
@@ -131,7 +132,7 @@ def _get_central_motif(Ts, bsf_radius, bsf_Ts_idx, bsf_subseq_idx, m, M_Ts, Σ_T
     return bsf_radius, bsf_Ts_idx, bsf_subseq_idx
 
 
-def _ostinato(Ts, m, M_Ts, Σ_Ts, client=None, device_id=None, mp_func=stump):
+def _ostinato(Ts, m, d, M_Ts, Σ_Ts, client=None, device_id=None, mp_func=stump_dil):
     """
     Find the consensus motif amongst a list of time series
 
@@ -210,7 +211,7 @@ def _ostinato(Ts, m, M_Ts, Σ_Ts, client=None, device_id=None, mp_func=stump):
         else:
             h = 0
 
-        mp = partial_mp_func(Ts[j], m, Ts[h], ignore_trivial=False)
+        mp = partial_mp_func(T_A=Ts[j], T_B=Ts[h], m=m, d=d, ignore_trivial=False)
         si = np.argsort(mp[:, 0])
         for q in si:
             radius = mp[q, 0]
@@ -242,9 +243,15 @@ def _ostinato(Ts, m, M_Ts, Σ_Ts, client=None, device_id=None, mp_func=stump):
 
     return bsf_radius, bsf_Ts_idx, bsf_subseq_idx
 
+def dilation_mapping(X: np.ndarray, d: int) -> np.ndarray:
+    result = X[0::d]
+    for i in range(1, d):
+        next = X[i::d]
+        result = np.concatenate((result, next))
+    return result
 
 @core.non_normalized(aamp_ostinato)
-def ostinato(Ts, m, normalize=True, p=2.0):
+def ostinato(Ts, m, d, normalize=True, p=2.0):
     """
     Find the z-normalized consensus motif of multiple time series
 
@@ -320,12 +327,18 @@ def ostinato(Ts, m, normalize=True, p=2.0):
     if not isinstance(Ts, list):  # pragma: no cover
         raise ValueError(f"`Ts` is of type `{type(Ts)}` but a `list` is expected")
 
+    # actual_w = (m-1)*d + 1
     M_Ts = [None] * len(Ts)
     Σ_Ts = [None] * len(Ts)
+    # M_Ts_dilated = [None] * len(Ts)
+    # Σ_Ts_dilated = [None] * len(Ts)
+    # Ts_dilated = copy.deepcopy(Ts)
     for i, T in enumerate(Ts):
+        T_dilated = dilation_mapping(T, d)
+        # Ts[i], M_Ts_dilated[i], Σ_Ts_dilated[i] = core.preprocess(T_dilated, m)
         Ts[i], M_Ts[i], Σ_Ts[i] = core.preprocess(T, m)
 
-    bsf_radius, bsf_Ts_idx, bsf_subseq_idx = _ostinato(Ts, m, M_Ts, Σ_Ts)
+    bsf_radius, bsf_Ts_idx, bsf_subseq_idx = _ostinato(Ts, m, d, M_Ts, Σ_Ts)
 
     (
         central_radius,
