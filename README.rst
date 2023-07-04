@@ -44,7 +44,7 @@
 ======
 The Dilated Matrix Profile
 ======
-This repo introduces a new matrix profile methode ``stump_dil()`` which is an dilation extension of ``stump()``. Subsequently, ``stump_dil()`` takes an additional argument, the dilation size ``d``. Tests can be found in the corresponding `experiments repo <https://github.com/r00tk1d/experiments_master_mp_dilation>`__.
+This repo introduces a new matrix profile methode ``stump_dil()`` which is a dilation extension of ``stump()``. Subsequently, ``stump_dil()`` takes an additional argument, the dilation size ``d``. Tests can be found in the corresponding `experiments repo <https://github.com/r00tk1d/experiments_master_mp_dilation>`__.
 
 
 
